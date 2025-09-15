@@ -5,12 +5,29 @@ import whisper
 import shutil
 import os
 import io
-
-# Note: The 'piper' library is not a real package and is used here
-# as a placeholder for the actual TTS logic which will be mocked in tests.
-# In a real implementation, this would be the actual TTS library.
+import wave
+from piper import PiperVoice
 
 app = FastAPI()
+
+# --- Model Loading ---
+# In a real app, you would want to handle model paths more robustly,
+# perhaps via environment variables.
+MODEL_DIR = os.path.join(os.path.dirname(__file__), 'models')
+# The .onnx file is the model, and the .json file is the config.
+TTS_MODEL_PATH = os.path.join(MODEL_DIR, 'en_US-lessac-medium.onnx')
+
+# Pre-load the TTS model at startup to avoid delays in request handling.
+# This assumes the model file and its corresponding .json config file exist.
+tts_voice = None
+if os.path.exists(TTS_MODEL_PATH):
+    try:
+        tts_voice = PiperVoice.load(TTS_MODEL_PATH)
+    except Exception as e:
+        print(f"Error loading TTS model: {e}")
+else:
+    print(f"Warning: TTS model not found at {TTS_MODEL_PATH}. The /tts endpoint will not work.")
+
 
 # --- Pydantic Models ---
 
@@ -33,25 +50,15 @@ async def transcribe_audio(file: UploadFile = File(...)):
     temp_dir = "temp_audio"
     os.makedirs(temp_dir, exist_ok=True)
     temp_file_path = os.path.join(temp_dir, file.filename)
-
     try:
-        # Save the uploaded file to a temporary location
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-
-        # Load the Whisper model. Using "base" for speed and lower resource usage.
         model = whisper.load_model("base")
-
-        # Transcribe the audio file. fp16=False is recommended if not using a GPU.
         result = model.transcribe(temp_file_path, fp16=False)
-
         return {"transcript": result["text"]}
-
     except Exception as e:
         return {"error": str(e)}
-
     finally:
-        # Clean up the temporary file
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
 
@@ -59,24 +66,22 @@ async def transcribe_audio(file: UploadFile = File(...)):
 @app.post("/tts")
 async def text_to_speech(request: TTSRequest):
     """
-    Accepts text and synthesizes it into speech.
-    This is a placeholder and returns a dummy WAV file.
+    Accepts text and synthesizes it into speech using Piper TTS.
     """
+    if tts_voice is None:
+        return {"error": "TTS model is not loaded. Please check server configuration and model path."}
+
     try:
-        # In a real implementation, you would use a library like piper-tts.
-        # For example:
-        # from piper import PiperVoice
-        # voice = PiperVoice.load("path/to/model.onnx")
-        # audio_bytes = voice.synthesize(request.text)
+        # Synthesize the audio into an in-memory buffer
+        audio_buffer = io.BytesIO()
+        with wave.open(audio_buffer, 'wb') as wav_file:
+            tts_voice.synthesize_wav(request.text, wav_file)
 
-        # For now, return a minimal, silent WAV file as a placeholder.
-        silent_wav = (
-            b'RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00'
-            b'\x80>\x00\x00\x00\xfa\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00'
-        )
-        audio_stream = io.BytesIO(silent_wav)
+        # Reset buffer position to the beginning before reading
+        audio_buffer.seek(0)
 
-        return StreamingResponse(audio_stream, media_type="audio/wav")
+        return StreamingResponse(audio_buffer, media_type="audio/wav")
 
     except Exception as e:
-        return {"error": str(e)}
+        print(f"Error during TTS synthesis: {e}")
+        return {"error": "Failed to synthesize audio."}

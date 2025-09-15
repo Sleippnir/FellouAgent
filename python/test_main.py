@@ -1,7 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, ANY
 import io
+import unittest
 
 # Import the FastAPI app instance
 from main import app
@@ -45,15 +46,28 @@ def test_health_check():
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
-def test_text_to_speech_success():
+@patch('main.PiperVoice.load')
+def test_text_to_speech_success(mock_load_voice):
     """
-    Test the /tts endpoint.
-    Checks for a successful response and the correct content type.
+    Test the /tts endpoint with a successful synthesis, mocking the PiperVoice.
     """
-    request_data = {"text": "Hello, world!"}
-    response = client.post("/tts", json=request_data)
+    # This test assumes the model is loaded successfully and mocks the behavior.
+    mock_voice = MagicMock()
 
-    assert response.status_code == 200
-    assert response.headers['content-type'] == 'audio/wav'
-    # Check that the response body (the dummy WAV file) is not empty
-    assert len(response.content) > 0
+    # The synthesize_wav method writes to a file-like object.
+    # We create a side effect function to simulate this behavior.
+    def mock_synthesize(text, wav_file):
+        wav_file.write(b"dummy_wave_data")
+
+    mock_voice.synthesize_wav.side_effect = mock_synthesize
+
+    # Since tts_voice is loaded at startup, we need to patch it within the 'main' module
+    # for the duration of this test.
+    with patch('main.tts_voice', mock_voice):
+        request_data = {"text": "Hello, world!"}
+        response = client.post("/tts", json=request_data)
+
+        assert response.status_code == 200
+        assert response.headers['content-type'] == 'audio/wav'
+        assert response.content == b"dummy_wave_data"
+        mock_voice.synthesize_wav.assert_called_once_with("Hello, world!", unittest.mock.ANY)

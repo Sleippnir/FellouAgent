@@ -102,11 +102,20 @@ cd <repository_directory>
     ```bash
     pip install -r requirements.txt
     ```
-4.  **Download AI Models**: The application uses Whisper for Speech-to-Text and Piper for Text-to-Speech. The models need to be downloaded.
-    *(Instructions on how to download and where to place the models will be added here later.)*
+4.  **Download AI Models**:
+    *   **Piper TTS Model**: The Text-to-Speech service requires a voice model. From the `python` directory, run the following command to download the recommended English voice model. This will create a `models` directory inside the `python` directory and place the voice files there.
+        ```bash
+        python -m piper.download en_US-lessac-medium
+        ```
+        This command will download the `en_US-lessac-medium.onnx` and `en_US-lessac-medium.onnx.json` files into the `./models` directory relative to where you run the command.
+    *   **Whisper STT Model**: The Speech-to-Text service uses the `openai-whisper` library, which will automatically download the 'base' model on its first run. No manual download is required for this one.
 
 5.  **Start the Python server**:
-    *(Instructions on how to run the FastAPI server will be added here later.)*
+    From the `python` directory, run the following command to start the FastAPI server:
+    ```bash
+    uvicorn main:app --host 0.0.0.0 --port 8000
+    ```
+    Alternatively, you can use the provided `Dockerfile` to build and run the service in a container.
 
 ### 6. Running Tests
 
